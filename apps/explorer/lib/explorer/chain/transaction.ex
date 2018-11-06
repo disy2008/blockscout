@@ -5,6 +5,8 @@ defmodule Explorer.Chain.Transaction do
 
   import Ecto.Query, only: [dynamic: 2, from: 2, preload: 3, subquery: 1, where: 3]
 
+  alias ABI.FunctionSelector
+
   alias Ecto.Changeset
 
   alias Explorer.Chain.{
@@ -21,6 +23,8 @@ defmodule Explorer.Chain.Transaction do
   }
 
   alias Explorer.Chain.Transaction.{Fork, Status}
+
+  require Logger
 
   @optional_attrs ~w(block_hash block_number created_contract_address_hash cumulative_gas_used error gas_used index
                      internal_transactions_indexed_at status to_address_hash)a
@@ -413,6 +417,60 @@ defmodule Explorer.Chain.Transaction do
       )
 
     preload(query, [tt], token_transfers: ^token_transfers_query)
+  end
+
+  # Because there is no contract association, we know the contract was not verified
+  def decoded_input_data(%__MODULE__{to_address: nil}), do: {:error, :no_to_address}
+  def decoded_input_data(%__MODULE__{input: %{bytes: bytes}}) when bytes in [nil, <<>>], do: {:error, :no_input_data}
+  def decoded_input_data(%__MODULE__{to_address: %{contract_code: nil}}), do: {:error, :not_a_contract_call}
+  def decoded_input_data(%__MODULE__{to_address: %{smart_contract: nil}}), do: {:error, :contract_not_verified}
+
+  def decoded_input_data(%__MODULE__{input: %{bytes: data}, to_address: %{smart_contract: %{abi: abi}}, hash: hash}) do
+    with {:ok, {selector, values}} <- find_and_decode(abi, data, hash),
+         {:ok, mapping} <- selector_mapping(selector, values, hash),
+         identifier <- Base.encode16(selector.method_id, case: :lower),
+         text <- function_call(selector.function, mapping),
+         do: {:ok, identifier, text, mapping}
+  end
+
+  defp function_call(name, mapping) do
+    text = Enum.map_join(mapping, ", ", fn {name, type, _} -> "#{type} #{name}" end)
+
+    name <> "(" <> text <> ")"
+  end
+
+  defp find_and_decode(abi, data, hash) do
+    result =
+      abi
+      |> ABI.parse_specification()
+      |> ABI.find_and_decode(data)
+
+    {:ok, result}
+  rescue
+    _ ->
+      Logger.warn(fn -> ["Could not decode input data for transaction: ", Hash.to_iodata(hash)] end)
+      {:error, :could_not_decode}
+  end
+
+  defp selector_mapping(selector, values, hash) do
+    types = Enum.map(selector.types, &FunctionSelector.encode_type/1)
+
+    mapping =
+      [selector.input_names, types, values]
+      |> Enum.zip()
+      |> Enum.map(fn
+        {name, "address", value} ->
+          {name, "address", "0x" <> Base.encode16(value, case: :lower)}
+
+        other ->
+          other
+      end)
+
+    {:ok, mapping}
+  rescue
+    _ ->
+      Logger.warn(fn -> ["Could not decode input data for transaction: ", Hash.to_iodata(hash)] end)
+      {:error, :could_not_decode}
   end
 
   @doc """

@@ -74,16 +74,70 @@
             </dd>
           </dl>
 
+
           <!-- Input -->
           <dl class="row mb-0">
-            <dt class="col-sm-3 text-muted"> <%= gettext "Input" %> </dt>
-            <dd class="col-sm-9">
-              <div class="tile tile-muted">
-                <pre class="pre-scrollable pre-scrollable-shorty pre-wrap mb-0">
-<code><%= @transaction.input %></code>
-                </pre>
-              </div>
-            </dd>
+            <%= case decoded_input_data(@transaction) do %>
+              <% {:error, :contract_not_verified} -> %>
+                <dt class="col-sm-3 text-muted"> <%= gettext "Input" %> </dt>
+                <dd class="col-sm-9">
+                  <div class="alert alert-danger">
+                    To see decoded input data, the <a href="<%= address_verify_contract_path(@conn, :new, @transaction.to_address.hash)%>">contract must be verified.</a>
+                  </div>
+                </dd>
+              <% {:error, :could_not_decode} -> %>
+                <dt class="col-sm-3 text-muted"> <%= gettext "Input" %> </dt>
+                <dd class="col-sm-9">
+                  <div class="alert alert-danger">
+                    Failed to decode input data. Some dynamic types are not currently supported.
+                  </div>
+                </dd>
+              <% {:ok, method_id, text, mapping} -> %>
+                <dt class="col-sm-3 text-muted"> <%= gettext "Input" %> </dt>
+                <dd class="col-sm-9">
+                <table summary="Transaction Info" class="table thead-light table-bordered">
+                  <tr>
+                    <td>Method Id</td>
+                    <td colspan="3"><code>0x<%= method_id %></code></td>
+                  </tr>
+                  <tr>
+                    <td>Call</td>
+                    <td colspan="3"><code><%= text %></code></td>
+                  </tr>
+                </table>
+                <table summary="Transaction Inputs" class="table thead-light table-bordered">
+                  <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Data</th>
+                  <tr>
+                <%= for {{name, type, value}, index} <- Enum.with_index(mapping) do %>
+                    <tr>
+                      <th scope="row"><%= index %></th>
+                      <td><%= name %></td>
+                      <td><%= type %></td>
+                      <td><%= value %></td>
+                    </tr>
+                <% end %>
+                </table>
+                </dd>
+              <% _ -> %>
+                <%= nil %>
+            <% end %>
+
+            <%= unless @transaction.input in [<<>>, nil] do %>
+              <dt class="col-sm-3 text-muted"><%= gettext "Raw Input" %></dt>
+              <dd class="col-sm-9">
+                <button id="show-raw-transaction-input" class="button button-primary">Show Raw Input</button>
+                <div id="raw-transaction-input" class="tile tile-muted raw-transaction-input">
+                  <button id="hide-raw-transaction-input" type="button" class="close" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                  </button>
+                  <code><%= @transaction.input %></code>
+                </div>
+              </dd>
+            <% end %>
           </dl>
         </div>
       </div>
