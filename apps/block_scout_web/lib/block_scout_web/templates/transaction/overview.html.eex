@@ -126,7 +126,7 @@
                 <%= nil %>
             <% end %>
 
-            <%= unless @transaction.input in [<<>>, nil] do %>
+            <%= unless @transaction.input.bytes in [<<>>, nil] do %>
               <dt class="col-sm-3 text-muted"><%= gettext "Raw Input" %></dt>
               <dd class="col-sm-9">
                 <button id="show-raw-transaction-input" class="button button-primary">Show Raw Input</button>
